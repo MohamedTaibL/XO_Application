@@ -39,6 +39,13 @@ const gameId = (route.query.gameId as string) || ''
 const playerId = (route.query.playerId as string) || ''
 const role = (route.query.role as string) || 'player'
 
+// Validate required parameters
+if (!gameId || !playerId) {
+  console.error('[GameView] Missing required parameters: gameId or playerId')
+  alert('Invalid game URL. Redirecting to online menu...')
+  router.push({ name: 'online' })
+}
+
 let off: (() => void) | null = null
 const onLocalCellClick = (index: number) => {
   const x = index % 3
@@ -100,6 +107,23 @@ onMounted(() => {
         router.push({ name: 'online' })
         break
       }
+      case 'error': {
+        console.error('[GameView] Error from server:', msg)
+        if (msg.message === 'unknown_game' || msg.message === 'unknown game') {
+          alert('Game does not exist. Redirecting to online menu...')
+          try { close() } catch (e) {}
+          router.push({ name: 'online' })
+        } else if (msg.message === 'game_full') {
+          alert('Game is full. Redirecting to online menu...')
+          try { close() } catch (e) {}
+          router.push({ name: 'online' })
+        } else {
+          alert(`Error: ${msg.message || 'Unknown error'}. Redirecting...`)
+          try { close() } catch (e) {}
+          router.push({ name: 'online' })
+        }
+        break
+      }
     }
   })
 })
@@ -124,56 +148,93 @@ function leaveEarly() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
   padding: 2rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.game-view-container::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 50% 50%, rgba(138, 43, 226, 0.15) 0%, transparent 60%);
+  animation: pulse-glow 6s ease-in-out infinite;
 }
 
 .content-wrapper {
   text-align: center;
   animation: fadeIn 0.8s ease-out;
   position: relative;
+  z-index: 1;
 }
 
 .back-button {
   position: absolute;
   top: -3rem;
   left: 0;
-  background: rgba(255, 255, 255, 0.2);
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  color: white;
+  background: rgba(30, 30, 50, 0.8);
+  border: 2px solid rgba(138, 43, 226, 0.4);
+  color: #e0e0f0;
   padding: 0.8rem 1.5rem;
   border-radius: 50px;
   font-size: 1rem;
   cursor: pointer;
   transition: all 0.3s ease;
   backdrop-filter: blur(10px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.back-button:hover {
+  background: rgba(138, 43, 226, 0.3);
+  border-color: rgba(138, 43, 226, 0.6);
+  transform: translateX(-5px);
+  box-shadow: 0 4px 20px rgba(138, 43, 226, 0.4);
 }
 
 .game-card {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(30, 30, 50, 0.6);
   backdrop-filter: blur(20px);
   border-radius: 30px;
   padding: 2rem;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(138, 43, 226, 0.3);
 }
 
-.page-title { color: white; font-size: 2rem; margin-bottom: 1rem }
+.page-title {
+  color: #ffffff;
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  text-shadow: 0 0 20px rgba(138, 43, 226, 0.6),
+               0 4px 8px rgba(0, 0, 0, 0.5);
+}
 
 .hud {
   margin: 1rem auto 1.6rem auto;
-  background: rgba(255,255,255,0.06);
+  background: rgba(20, 20, 35, 0.8);
   padding: 0.8rem 1.2rem;
   border-radius: 12px;
   max-width: 520px;
-  color: #fff;
+  color: #e0e0f0;
   text-align: left;
+  border: 2px solid rgba(138, 43, 226, 0.3);
 }
-.hud-title { font-weight:700; margin-bottom:0.5rem }
-.hud ul { list-style:none; padding:0; margin:0; display:flex; gap:1rem; align-items:center }
-.hud-item { display:flex; gap:0.6rem; align-items:center }
-.mark { padding:0.15rem 0.5rem; border-radius:6px; font-weight:700 }
-.mark.x { background: rgba(255,107,107,0.15); color: #ff6b6b }
-.mark.o { background: rgba(78,205,196,0.12); color: #4ecdc4 }
-.you-tag { margin-left:0.4rem; opacity:0.9 }
+.hud-title { font-weight: 700; margin-bottom: 0.5rem; color: #ffffff }
+.hud ul { list-style: none; padding: 0; margin: 0; display: flex; gap: 1rem; align-items: center }
+.hud-item { display: flex; gap: 0.6rem; align-items: center }
+.mark { padding: 0.15rem 0.5rem; border-radius: 6px; font-weight: 700; border: 1px solid }
+.mark.x { background: rgba(255, 51, 102, 0.2); color: #ff3366; border-color: rgba(255, 51, 102, 0.4) }
+.mark.o { background: rgba(0, 229, 255, 0.2); color: #00e5ff; border-color: rgba(0, 229, 255, 0.4) }
+.you-tag { margin-left: 0.4rem; opacity: 0.9 }
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
 </style>

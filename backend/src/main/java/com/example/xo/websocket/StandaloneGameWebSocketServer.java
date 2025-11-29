@@ -105,18 +105,23 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
             switch (type){
                 
                 case "create": {
-                    String gameId = node.path("gameId").asText();
                     String playerId = node.path("playerId").asText();
-                    if (gameId.isBlank() || playerId.isBlank()){
-                        sendJson(conn, Map.of("type", "error", "message", "missing"));
+                    if (playerId.isBlank()){
+                        sendJson(conn, Map.of("type", "error", "message", "missing playerId"));
                         return;
                     }
 
-                    // Do not overwrite existing game
-                    if (idToGame.containsKey(gameId)){
-                        sendJson(conn, Map.of("type", "error", "message", "game_exists", "gameId", gameId));
+                    // Check if this connection already has a game
+                    String existingGameId = connToGame.get(conn);
+                    if (existingGameId != null && idToGame.containsKey(existingGameId)) {
+                        // Connection already in a game, return error
+                        sendJson(conn, Map.of("type", "error", "message", "already_in_game", "gameId", existingGameId));
+                        log.warn("Create attempt by {} who is already in game {}", playerId, existingGameId);
                         return;
                     }
+
+                    // Generate unique room ID server-side
+                    String gameId = generateUniqueGameId();
 
                     // create game and register creator
                     Game game = new Game(gameId);
@@ -129,7 +134,8 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                     Player p = new Player(playerId, node.path("name").asText(null), null, null);
                     game.addPlayer(p);
 
-                    sendJson(conn, buildMessageWithState("created", game, Map.of("playerId", playerId)));
+                    sendJson(conn, buildMessageWithState("created", game, Map.of("playerId", playerId, "gameId", gameId)));
+                    log.info("Game {} created by player {}", gameId, playerId);
                     break;
                 }
                 case "sync": {
@@ -157,30 +163,59 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                     String gameId = node.path("gameId").asText();
                     String playerId = node.path("playerId").asText();
                     if (gameId.isBlank() || playerId.isBlank()){
-                        sendJson(conn , Map.of("type" , "error" , "message" , "missing"));
+                        sendJson(conn , Map.of("type" , "error" , "message" , "missing playerId or gameId"));
                         return ;
+                    }
+
+                    // Check if this connection is already in a game
+                    String existingGameId = connToGame.get(conn);
+                    if (existingGameId != null) {
+                        if (existingGameId.equals(gameId)) {
+                            // Trying to join the same game - treat as reconnection/sync
+                            Game existingGame = idToGame.get(gameId);
+                            if (existingGame != null) {
+                                sendJson(conn, buildMessageWithState("joined", existingGame, Map.of("playerId", playerId)));
+                                log.info("Player {} re-joined/synced to game {}", playerId, gameId);
+                                return;
+                            }
+                        } else {
+                            // Trying to join a different game - error
+                            sendJson(conn, Map.of("type", "error", "message", "already_in_game", "gameId", existingGameId));
+                            log.warn("Player {} tried to join game {} but already in game {}", playerId, gameId, existingGameId);
+                            return;
+                        }
                     }
 
                     // only allow joining existing games
                     Game game = idToGame.get(gameId);
                     if (game == null) {
-                        sendJson(conn, Map.of("type", "error", "message", "unknown game", "gameId", gameId));
+                        sendJson(conn, Map.of("type", "error", "message", "unknown_game", "gameId", gameId));
                         log.warn("Join attempt for unknown game {} by {}", gameId, playerId);
                         return;
                     }
 
-                    games.computeIfAbsent(gameId , k -> ConcurrentHashMap.newKeySet()).add(conn);
-                    connToGame.put(conn , gameId);
-                    connToPlayer.put(conn , playerId);
+                    // Check if game is full
+                    synchronized (game) {
+                        if (game.getPlayers().size() >= 2) {
+                            sendJson(conn, Map.of("type", "error", "message", "game_full", "gameId", gameId));
+                            log.warn("Player {} tried to join full game {}", playerId, gameId);
+                            return;
+                        }
 
-                    // register the player
-                    Player p = new Player(playerId, node.path("name").asText(null), null, null);
-                    game.addPlayer(p);
+                        // Add connection to game
+                        games.computeIfAbsent(gameId , k -> ConcurrentHashMap.newKeySet()).add(conn);
+                        connToGame.put(conn , gameId);
+                        connToPlayer.put(conn , playerId);
 
-                    sendJson(conn, buildMessageWithState("joined", game, Map.of("playerId", playerId)));
+                        // register the player
+                        Player p = new Player(playerId, node.path("name").asText(null), null, null);
+                        game.addPlayer(p);
 
-                    log.info("Player {} joined game {} — broadcasting to peers (excluding joiner)", playerId, gameId);
-                    broadcastToGame(gameId, buildMessageWithState("player_joined", game, Map.of("playerId", playerId, "name", node.path("name").asText(null))), conn);
+                        sendJson(conn, buildMessageWithState("joined", game, Map.of("playerId", playerId)));
+
+                        log.info("Player {} joined game {} — broadcasting to peers (excluding joiner)", playerId, gameId);
+                        broadcastToGame(gameId, buildMessageWithState("player_joined", game, Map.of("playerId", playerId, "name", node.path("name").asText(null))), conn);
+                    }
                     break;
 
                 }
@@ -442,5 +477,34 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
             }
         }
         log.info("broadcastToGame gameId={} -> peersSize={} sent={}", gameId, peers.size(), sent);
+    }
+
+    /**
+     * Generate a unique 6-character alphanumeric game ID.
+     * Retries if collision occurs (highly unlikely with proper random generation).
+     */
+    private String generateUniqueGameId() {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        int maxAttempts = 10;
+        
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            StringBuilder sb = new StringBuilder(6);
+            for (int i = 0; i < 6; i++) {
+                int index = (int) (Math.random() * chars.length());
+                sb.append(chars.charAt(index));
+            }
+            String gameId = sb.toString();
+            
+            // Check if this ID is already in use
+            if (!idToGame.containsKey(gameId)) {
+                return gameId;
+            }
+            log.warn("Game ID collision detected: {}, retrying... (attempt {}/{})", gameId, attempt + 1, maxAttempts);
+        }
+        
+        // Fallback: append timestamp if all random attempts fail
+        String fallbackId = "G" + System.currentTimeMillis() % 100000;
+        log.error("Failed to generate unique game ID after {} attempts, using fallback: {}", maxAttempts, fallbackId);
+        return fallbackId;
     }
 }

@@ -134,6 +134,13 @@ const resetGame = () => {
   gameActive.value = true
   winningLine.value = null
   currentTurn.value = 'X' // X always starts
+  
+  // If bot is X (player chose O), bot should move first
+  if (props.isBotGame && botMark.value === 'X') {
+    setTimeout(() => {
+      botMove()
+    }, 600)
+  }
 }
 
 onMounted(() => {
@@ -234,10 +241,13 @@ function setState(state: { board?: string[]; currentTurn?: string | null; winner
 }
 
 .game-info {
-  background: white;
+  background: rgba(30, 30, 50, 0.8);
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(138, 43, 226, 0.3);
   padding: 1.5rem 3rem;
   border-radius: 15px;
-  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .player-indicator {
@@ -248,7 +258,7 @@ function setState(state: { board?: string[]; currentTurn?: string | null; winner
 }
 
 .current-turn {
-  color: #666;
+  color: #b8b8d1;
   font-weight: 500;
 }
 
@@ -259,36 +269,42 @@ function setState(state: { board?: string[]; currentTurn?: string | null; winner
 }
 
 .x-turn {
-  color: #ff6b6b;
-  text-shadow: 2px 2px 4px rgba(255, 107, 107, 0.3);
+  color: #ff3366;
+  text-shadow: 0 0 10px rgba(255, 51, 102, 0.8),
+               2px 2px 4px rgba(255, 51, 102, 0.4);
 }
 
 .o-turn {
-  color: #4ecdc4;
-  text-shadow: 2px 2px 4px rgba(78, 205, 196, 0.3);
+  color: #00e5ff;
+  text-shadow: 0 0 10px rgba(0, 229, 255, 0.8),
+               2px 2px 4px rgba(0, 229, 255, 0.4);
 }
 
 .board {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 15px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, rgba(138, 43, 226, 0.3) 0%, rgba(102, 126, 234, 0.3) 100%);
   padding: 20px;
   border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(138, 43, 226, 0.4);
 }
 
 .cell {
   width: 120px;
   height: 120px;
-  background: white;
+  background: rgba(20, 20, 35, 0.9);
+  border: 2px solid rgba(138, 43, 226, 0.4);
   border-radius: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.05);
   position: relative;
   overflow: hidden;
 }
@@ -300,7 +316,7 @@ function setState(state: { board?: string[]; currentTurn?: string | null; winner
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.3) 100%);
+  background: linear-gradient(135deg, transparent 0%, rgba(138, 43, 226, 0.3) 100%);
   opacity: 0;
   transition: opacity 0.3s ease;
 }
@@ -311,7 +327,10 @@ function setState(state: { board?: string[]; currentTurn?: string | null; winner
 
 .cell-empty:hover {
   transform: scale(1.05);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  background: rgba(30, 30, 50, 0.9);
+  border-color: rgba(138, 43, 226, 0.6);
+  box-shadow: 0 10px 30px rgba(138, 43, 226, 0.4),
+              0 0 20px rgba(138, 43, 226, 0.2);
 }
 
 .cell-content {
@@ -321,13 +340,17 @@ function setState(state: { board?: string[]; currentTurn?: string | null; winner
 }
 
 .cell-x .cell-content {
-  color: #ff6b6b;
-  text-shadow: 3px 3px 6px rgba(255, 107, 107, 0.3);
+  color: #ff3366;
+  text-shadow: 0 0 15px rgba(255, 51, 102, 1),
+               3px 3px 6px rgba(255, 51, 102, 0.5);
+  filter: drop-shadow(0 0 10px rgba(255, 51, 102, 0.8));
 }
 
 .cell-o .cell-content {
-  color: #4ecdc4;
-  text-shadow: 3px 3px 6px rgba(78, 205, 196, 0.3);
+  color: #00e5ff;
+  text-shadow: 0 0 15px rgba(0, 229, 255, 1),
+               3px 3px 6px rgba(0, 229, 255, 0.5);
+  filter: drop-shadow(0 0 10px rgba(0, 229, 255, 0.8));
 }
 
 .game-status {
@@ -342,6 +365,8 @@ function setState(state: { board?: string[]; currentTurn?: string | null; winner
   font-weight: 700;
   margin: 0;
   animation: bounceIn 0.6s ease-out;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .winner-icon,
@@ -351,29 +376,31 @@ function setState(state: { board?: string[]; currentTurn?: string | null; winner
 }
 
 .x-letter {
-  color: #ff6b6b;
+  color: #ff3366;
+  text-shadow: 0 0 10px rgba(255, 51, 102, 0.8);
 }
 
 .o-letter {
-  color: #4ecdc4;
+  color: #00e5ff;
+  text-shadow: 0 0 10px rgba(0, 229, 255, 0.8);
 }
 
 .reset-button {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #ff3366 0%, #8a2be2 100%);
   color: white;
-  border: none;
+  border: 2px solid rgba(138, 43, 226, 0.5);
   padding: 1rem 3rem;
   border-radius: 50px;
   font-size: 1.2rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 10px 30px rgba(138, 43, 226, 0.4);
 }
 
 .reset-button:hover {
   transform: translateY(-3px);
-  box-shadow: 0 15px 40px rgba(102, 126, 234, 0.6);
+  box-shadow: 0 15px 40px rgba(138, 43, 226, 0.6);
 }
 
 .reset-button:active {
