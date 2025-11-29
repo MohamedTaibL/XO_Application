@@ -1,0 +1,8 @@
+/home/seiikatsu/s5/Java_Programming/XO_Application/backend/src/main/java/com/example/xo/XoApplication.java
+/home/seiikatsu/s5/Java_Programming/XO_Application/backend/src/main/java/com/example/xo/dto/GameMessage.java
+/home/seiikatsu/s5/Java_Programming/XO_Application/backend/src/main/java/com/example/xo/websocket/WebSocketServerStarter.java
+/home/seiikatsu/s5/Java_Programming/XO_Application/backend/src/main/java/com/example/xo/model/Player.java
+/home/seiikatsu/s5/Java_Programming/XO_Application/backend/src/main/java/com/example/xo/websocket/StandaloneGameWebSocketServer.java
+/home/seiikatsu/s5/Java_Programming/XO_Application/backend/src/main/java/com/example/xo/model/Game.java
+/home/seiikatsu/s5/Java_Programming/XO_Application/backend/src/main/java/com/example/xo/model/Move.java
+/home/seiikatsu/s5/Java_Programming/XO_Application/backend/src/main/java/com/example/xo/model/GameState.java
