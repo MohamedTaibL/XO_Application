@@ -23,21 +23,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GameBoard from '@/components/GameBoard.vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 
 const route = useRoute()
 const router = useRouter()
-const { onMessage, send, connected, close } = useWebSocket()
+const { onMessage, send, connected, connect, close } = useWebSocket()
 
 const gameBoard = ref<InstanceType<typeof GameBoard> | null>(null)
 const players = ref<Array<{ id: string; name?: string; mark?: string }>>([])
+const validated = ref(false)
+const currentRole = ref<string>('player')
 
 const gameId = (route.query.gameId as string) || ''
 const playerId = (route.query.playerId as string) || ''
 const role = (route.query.role as string) || 'player'
+currentRole.value = role
 
 // Validate required parameters
 if (!gameId || !playerId) {
@@ -52,9 +55,24 @@ const onLocalCellClick = (index: number) => {
   if (connected.value) send({ type: 'move', gameId, playerId, x, y })
 }
 
+// Attempt to reconnect/validate the game on mount
+function attemptReconnect() {
+  if (!gameId || !playerId) return
+  
+  // Send reconnect message to validate and re-attach to the game
+  send({ type: 'reconnect', gameId, playerId })
+}
+
 onMounted(() => {
   off = onMessage((msg: any) => {
     if (!msg) return
+    
+    // Handle welcome message - trigger reconnect attempt
+    if (msg.type === 'welcome') {
+      attemptReconnect()
+      return
+    }
+    
     // support socket_closed pseudo-message from the composable
     if (msg.type === 'socket_closed') {
       const lm = msg.lastMessage
@@ -71,10 +89,35 @@ onMounted(() => {
       router.push({ name: 'online' })
       return
     }
+    
+    // Handle reconnection response
+    if (msg.type === 'reconnected' && msg.gameId === gameId) {
+      validated.value = true
+      currentRole.value = msg.role || role
+      
+      // Restore game state
+      if (gameBoard.value && typeof gameBoard.value.setState === 'function') {
+        const isGameOver = msg.state === 'FINISHED'
+        const winner = isGameOver ? (msg.winner || null) : null
+        gameBoard.value.setState({ 
+          board: msg.board, 
+          currentTurn: isGameOver ? null : msg.currentTurn,
+          winner: winner,
+          draw: isGameOver && !winner
+        })
+      }
+      if (msg.players) {
+        players.value = Object.values(msg.players).map((p: any) => ({ id: p.id, name: p.name, mark: p.mark }))
+      }
+      console.log('[GameView] Reconnected successfully as', currentRole.value)
+      return
+    }
+    
     if (!msg || msg.gameId !== gameId) return
 
     switch (msg.type) {
       case 'game_started': {
+        validated.value = true
         // authoritative state
         if (gameBoard.value && typeof gameBoard.value.setState === 'function') {
           gameBoard.value.setState({ board: msg.board, currentTurn: msg.currentTurn })
@@ -96,7 +139,7 @@ onMounted(() => {
         // after a short delay, route back to the appropriate view
         setTimeout(() => {
           // keep the websocket connection open and route back while keeping room association
-          if (role === 'creator') router.push({ name: 'create-room', query: { gameId, role: 'creator' } })
+          if (currentRole.value === 'creator') router.push({ name: 'create-room', query: { gameId, role: 'creator' } })
           else router.push({ name: 'join-room', query: { gameId, role: 'player' } })
         }, 2000)
         break
@@ -110,7 +153,7 @@ onMounted(() => {
       }
       case 'error': {
         // Only log errors to console - don't interrupt the user
-        console.warn('[GameView] Error from server:', msg.message)
+        console.debug('[GameView] Error from server:', msg.message)
 
         // FATAL ERRORS: Room doesn't exist or user can't be in this game
         // These require redirecting to lobby
@@ -119,12 +162,13 @@ onMounted(() => {
           'unknown game',
           'game_full',
           'not joined to a game',
+          'not_in_game',
           'missing'
         ]
 
-        if (fatalErrors.includes(msg.message)) {
+        if (fatalErrors.some(e => msg.message?.includes(e))) {
           // Critical failure: Silently redirect to lobby
-          console.warn('[GameView] Fatal error, redirecting to lobby')
+          console.warn('[GameView] Fatal error, redirecting to lobby:', msg.message)
           try { close() } catch (e) {}
           router.push({ name: 'online' })
         }
@@ -134,6 +178,9 @@ onMounted(() => {
       }
     }
   })
+
+  // Ensure connection and attempt reconnect
+  connect()
 })
 
 onBeforeUnmount(() => {
@@ -143,7 +190,7 @@ onBeforeUnmount(() => {
 function leaveEarly() {
   try { send({ type: 'leave', gameId, playerId }) } catch (e) {}
   try { close() } catch (e) {}
-  if (role === 'creator') router.push({ name: 'create-room' })
+  if (currentRole.value === 'creator') router.push({ name: 'create-room' })
   else router.push({ name: 'join-room' })
 }
 </script>

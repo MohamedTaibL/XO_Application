@@ -56,8 +56,6 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
 
     @Override
     public void onClose(WebSocket conn, int code, String reason, boolean remote) {
-        // TODO: handle connection close
-
         String gameId = connToGame.remove(conn);
         // capture playerId BEFORE removing it from the map so we can include it in broadcasts
         String playerId = connToPlayer.get(conn);
@@ -69,24 +67,23 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
             if (peers != null){
                 peers.remove(conn);
 
-                // include game state if available; remove player from model first so state reflects current players
                 Game game = idToGame.get(gameId);
                 if (game != null) {
-                    // remove the player from the game model
-                    game.removePlayer(playerId);
-                    broadcastToGame(gameId, buildMessageWithState("player_left", game, Map.of("playerId", playerId)), null);
-                } else {
-                    broadcastToGame(gameId , Map.of(
-                        "type" , "player_left",
-                        "gameId" , gameId,
-                        "playerId" , playerId
-                    ) , null);
+                    // DON'T remove the player from the game model on disconnect
+                    // This allows them to reconnect. Only remove on explicit "leave".
+                    // Just notify other players about the disconnect
+                    broadcastToGame(gameId, Map.of(
+                        "type", "player_disconnected",
+                        "gameId", gameId,
+                        "playerId", playerId
+                    ), null);
+                    log.info("Player {} disconnected from game {} (can reconnect)", playerId, gameId);
                 }
 
                 log.debug("After close, game {} has {} peers", gameId, peers.size());
-                if (peers.isEmpty()){
+                // Only cleanup the game if ALL players have disconnected and no one is in the game model
+                if (peers.isEmpty() && game != null && game.getPlayers().isEmpty()){
                     games.remove(gameId);
-                    // remove game model as well to free memory and prevent stale joins
                     idToGame.remove(gameId);
                     log.info("Removed empty game {}", gameId);
                 }
@@ -149,7 +146,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
 
                     Game game = idToGame.get(gameId);
                     if (game == null) {
-                        sendJson(conn, Map.of("type", "error", "message", "unknown game", "gameId", gameId));
+                        sendJson(conn, Map.of("type", "error", "message", "unknown_game", "gameId", gameId));
                         log.warn("Sync request for unknown game {} by {}", gameId, playerId);
                         return;
                     }
@@ -157,6 +154,73 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                     // Send current game state to the requesting connection
                     sendJson(conn, buildMessageWithState("synced", game, Map.of("playerId", playerId)));
                     log.info("Synced game state for {} to player {}", gameId, playerId);
+                    break;
+                }
+                case "reconnect": {
+                    String gameId = node.path("gameId").asText();
+                    String playerId = node.path("playerId").asText();
+                    
+                    if (gameId.isBlank() || playerId.isBlank()) {
+                        sendJson(conn, Map.of("type", "error", "message", "missing"));
+                        return;
+                    }
+
+                    Game game = idToGame.get(gameId);
+                    if (game == null) {
+                        sendJson(conn, Map.of("type", "error", "message", "unknown_game", "gameId", gameId));
+                        log.warn("Reconnect request for unknown game {} by {}", gameId, playerId);
+                        return;
+                    }
+
+                    // Check if this player was part of the game
+                    Player existingPlayer = game.getPlayers().get(playerId);
+                    if (existingPlayer == null) {
+                        sendJson(conn, Map.of("type", "error", "message", "not_in_game", "gameId", gameId));
+                        log.warn("Reconnect request for game {} by unknown player {}", gameId, playerId);
+                        return;
+                    }
+
+                    // Re-attach this connection to the game
+                    // First, remove any stale connection mappings for this player
+                    WebSocket oldConn = null;
+                    for (Map.Entry<WebSocket, String> entry : connToPlayer.entrySet()) {
+                        if (entry.getValue().equals(playerId) && entry.getKey() != conn) {
+                            oldConn = entry.getKey();
+                            break;
+                        }
+                    }
+                    if (oldConn != null) {
+                        connToGame.remove(oldConn);
+                        connToPlayer.remove(oldConn);
+                        Set<WebSocket> peers = games.get(gameId);
+                        if (peers != null) peers.remove(oldConn);
+                        log.info("Removed stale connection for player {} during reconnect", playerId);
+                    }
+
+                    // Add new connection to the game
+                    games.computeIfAbsent(gameId, k -> ConcurrentHashMap.newKeySet()).add(conn);
+                    connToGame.put(conn, gameId);
+                    connToPlayer.put(conn, playerId);
+
+                    // Determine role based on player order (first player is usually creator)
+                    String role = "player";
+                    int idx = 0;
+                    for (String pid : game.getPlayers().keySet()) {
+                        if (pid.equals(playerId) && idx == 0) {
+                            role = "creator";
+                            break;
+                        }
+                        idx++;
+                    }
+
+                    // Send current game state with reconnect confirmation
+                    Map<String, Object> extras = new java.util.HashMap<>();
+                    extras.put("playerId", playerId);
+                    extras.put("role", role);
+                    extras.put("reconnected", true);
+                    sendJson(conn, buildMessageWithState("reconnected", game, extras));
+                    
+                    log.info("Player {} reconnected to game {} as {}", playerId, gameId, role);
                     break;
                 }
                 case "join":{
