@@ -135,33 +135,26 @@ function joinRoom() {
     if (!msg || !msg.type) return
     // handle socket closed event forwarded by composable
     if (msg.type === 'socket_closed') {
-      // if lastMessage indicates the room was closed, or we were joined to this room, route to online
+      // if lastMessage indicates the room was closed, or we were joined to this room, route to online silently
       const lm = msg.lastMessage
       if ((lm && lm.type === 'room_closed' && lm.gameId === roomCode.value) || joined.value) {
-        alert('Disconnected: the room was closed by the host.')
         try { close() } catch (e) {}
         router.push({ name: 'online' })
       }
       return
     }
     if (msg.type === 'error') {
-      // server reported unknown game or other error
-      console.error('[JoinRoom] Error from server:', msg)
-      if (msg.message === 'unknown_game' || msg.message === 'unknown game') {
-        alert('Room not found. Redirecting to online menu...')
+      // server reported unknown game or other error - handle silently
+      console.debug('[JoinRoom] Error from server:', msg)
+      const fatalErrors = ['unknown_game', 'unknown game', 'game_full']
+      if (fatalErrors.some(e => msg.message?.includes(e))) {
         router.push({ name: 'online' })
-      } else if (msg.message === 'game_full') {
-        alert('Room is full. Redirecting to online menu...')
-        router.push({ name: 'online' })
-      } else if (msg.message === 'already_in_game') {
-        alert('You are already in a game. Please leave that room first.')
-        // Optionally navigate to the existing game
-        if (msg.gameId) {
-          router.push({ name: 'game', query: { gameId: msg.gameId, playerId: username.value } })
-        }
+      } else if (msg.message === 'already_in_game' && msg.gameId) {
+        // Navigate to existing game silently
+        router.push({ name: 'game', query: { gameId: msg.gameId, playerId: username.value } })
       } else {
-        alert(`Error: ${msg.message || 'Unknown error'}. Redirecting...`)
-        router.push({ name: 'online' })
+        // Non-fatal errors - just log
+        console.debug('[JoinRoom] Non-fatal error ignored:', msg.message)
       }
       return
     }

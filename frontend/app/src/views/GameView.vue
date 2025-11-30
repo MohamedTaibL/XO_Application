@@ -16,7 +16,7 @@
       </div>
 
       <div class="game-card">
-        <GameBoard ref="gameBoard" :is-bot-game="false" @cell-click="onLocalCellClick" />
+        <GameBoard ref="gameBoard" :is-bot-game="false" :is-online="true" @cell-click="onLocalCellClick" />
       </div>
     </div>
   </div>
@@ -41,8 +41,7 @@ const role = (route.query.role as string) || 'player'
 
 // Validate required parameters
 if (!gameId || !playerId) {
-  console.error('[GameView] Missing required parameters: gameId or playerId')
-  alert('Invalid game URL. Redirecting to online menu...')
+  console.warn('[GameView] Missing required parameters: gameId or playerId')
   router.push({ name: 'online' })
 }
 
@@ -60,12 +59,14 @@ onMounted(() => {
     if (msg.type === 'socket_closed') {
       const lm = msg.lastMessage
       if (lm && lm.type === 'room_closed' && lm.gameId === gameId) {
-        alert('Room closed by host — returning to lobby.')
+        // Room closed by host - silently redirect
+        console.warn('[GameView] Room closed by host')
         try { close() } catch (e) {}
         router.push({ name: 'online' })
         return
       }
-      // generic socket close: route back to lobby
+      // generic socket close: silently route back to lobby
+      console.warn('[GameView] Socket closed unexpectedly')
       try { close() } catch (e) {}
       router.push({ name: 'online' })
       return
@@ -101,27 +102,34 @@ onMounted(() => {
         break
       }
       case 'room_closed': {
-        // room closed by creator while in-game
-        alert('Room closed by host. Returning to lobby.')
+        // room closed by creator while in-game - silently redirect
+        console.warn('[GameView] Room closed by host')
         try { close() } catch (e) {}
         router.push({ name: 'online' })
         break
       }
       case 'error': {
-        console.error('[GameView] Error from server:', msg)
-        if (msg.message === 'unknown_game' || msg.message === 'unknown game') {
-          alert('Game does not exist. Redirecting to online menu...')
-          try { close() } catch (e) {}
-          router.push({ name: 'online' })
-        } else if (msg.message === 'game_full') {
-          alert('Game is full. Redirecting to online menu...')
-          try { close() } catch (e) {}
-          router.push({ name: 'online' })
-        } else {
-          alert(`Error: ${msg.message || 'Unknown error'}. Redirecting...`)
+        // Only log errors to console - don't interrupt the user
+        console.warn('[GameView] Error from server:', msg.message)
+
+        // FATAL ERRORS: Room doesn't exist or user can't be in this game
+        // These require redirecting to lobby
+        const fatalErrors = [
+          'unknown_game',
+          'unknown game',
+          'game_full',
+          'not joined to a game',
+          'missing'
+        ]
+
+        if (fatalErrors.includes(msg.message)) {
+          // Critical failure: Silently redirect to lobby
+          console.warn('[GameView] Fatal error, redirecting to lobby')
           try { close() } catch (e) {}
           router.push({ name: 'online' })
         }
+        // Non-fatal errors (wrong turn, cell occupied, etc.): 
+        // Simply ignore - don't alert, don't redirect, just do nothing
         break
       }
     }

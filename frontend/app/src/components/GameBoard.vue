@@ -36,7 +36,7 @@
       </p>
     </div>
 
-    <button class="reset-button" @click="resetGame">
+    <button v-if="!isOnline" class="reset-button" @click="resetGame">
       New Game
     </button>
   </div>
@@ -47,6 +47,10 @@ import { ref, computed, watch, onMounted } from 'vue'
 
 const props = defineProps({
   isBotGame: {
+    type: Boolean,
+    default: false
+  },
+  isOnline: {
     type: Boolean,
     default: false
   },

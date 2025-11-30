@@ -237,23 +237,17 @@ function handleIncoming(msg: any) {
       break
     }
     case 'error': {
-      console.error('[CreateRoom] Error from server:', msg)
-      // Handle different error types
-      if (msg.message === 'unknown_game' || msg.message === 'game_does_not_exist') {
-        alert('Game does not exist. Redirecting to online menu...')
+      // Handle errors silently - no alerts
+      console.debug('[CreateRoom] Error from server:', msg)
+      const fatalErrors = ['unknown_game', 'game_does_not_exist', 'game_full']
+      if (fatalErrors.some(e => msg.message?.includes(e))) {
         router.push({ name: 'online' })
-      } else if (msg.message === 'game_full') {
-        alert('Room is full. Redirecting to online menu...')
-        router.push({ name: 'online' })
-      } else if (msg.message === 'already_in_game') {
-        alert('You are already in a game. Please close that room first.')
-        // Optionally navigate to the existing game
-        if (msg.gameId) {
-          router.push({ name: 'game', query: { gameId: msg.gameId, playerId: username.value } })
-        }
+      } else if (msg.message === 'already_in_game' && msg.gameId) {
+        // Navigate to existing game silently
+        router.push({ name: 'game', query: { gameId: msg.gameId, playerId: username.value } })
       } else {
-        alert(`Error: ${msg.message || 'Unknown error'}`)
-        router.push({ name: 'online' })
+        // Non-fatal errors - just log
+        console.debug('[CreateRoom] Non-fatal error ignored:', msg.message)
       }
       break
     }
