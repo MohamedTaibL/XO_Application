@@ -8,7 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Component that starts the standalone WebSocket server when Spring Boot starts.
+ * component that starts the standalone websocket server when spring boot starts.
  */
 @Component
 public class WebSocketServerStarter {
@@ -28,7 +28,7 @@ public class WebSocketServerStarter {
         }
 
         try {
-            // instantiate with the integer port (StandaloneGameWebSocketServer wraps InetSocketAddress)
+            // instantiate with the integer port (standalonegamewebsocketserver wraps inet socket address)
             server = new StandaloneGameWebSocketServer(port);
 
             // start server (typically non-blocking; it will start background threads)
@@ -46,7 +46,7 @@ public class WebSocketServerStarter {
         if (server != null) {
             try {
                 log.info("Stopping StandaloneGameWebSocketServer...");
-                // WebSocketServer#stop() may throw InterruptedException/IOException depending on underlying implementation
+                // websocketserver#stop() may throw interruptedexception/ioexception depending on underlying implementation
                 server.stop();
                 log.info("StandaloneGameWebSocketServer stopped.");
             } catch (InterruptedException ie) {

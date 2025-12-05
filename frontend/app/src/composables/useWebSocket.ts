@@ -2,7 +2,7 @@ import { ref } from 'vue'
 
 type MessageHandler = (data: any) => void
 
-// Simple singleton composable to manage a WebSocket connection across views
+// simple singleton composable to manage a websocket connection across views
 const socket = ref<WebSocket | null>(null)
 const connected = ref(false)
 const lastMessage = ref<any>(null)
@@ -43,7 +43,7 @@ function connect(url?: string) {
   socket.value.onclose = () => {
     // notify handlers that the socket has closed so views can react (e.g., room was closed by owner)
     connected.value = false
-    // capture lastMessage snapshot for handlers
+  // capture lastmessage snapshot for handlers
     const lm = lastMessage.value
     socket.value = null
     for (const h of messageHandlers) {

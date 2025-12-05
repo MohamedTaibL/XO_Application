@@ -29,19 +29,11 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
 
     private static final Logger log = LoggerFactory.getLogger(StandaloneGameWebSocketServer.class);
 
-    // gameId -> Game Instance (model owns board/moves/turn)
+    // maps
     private final Map<String, Game> idToGame = new ConcurrentHashMap<>();
-
-    //Just an object Mapper
     private final ObjectMapper mapper = new ObjectMapper();
-
-    //gameId -> setOfConnections
     private final Map<String , Set<WebSocket> > games = new ConcurrentHashMap<>();
-
-    // WebSocket connection -> Game
     public final Map<WebSocket , String> connToGame = new ConcurrentHashMap<>();
-
-    //WebSocket connection -> Player
     public final Map<WebSocket , String> connToPlayer = new ConcurrentHashMap<>();
 
     public StandaloneGameWebSocketServer(int port) {
@@ -57,9 +49,9 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
     @Override
     public void onClose(WebSocket conn, int code, String reason, boolean remote) {
         String gameId = connToGame.remove(conn);
-        // capture playerId BEFORE removing it from the map so we can include it in broadcasts
+    // capture playerid before removing it so broadcasts include it
         String playerId = connToPlayer.get(conn);
-        // now remove the mapping
+    // remove the mapping
         connToPlayer.remove(conn);
 
         if (gameId != null){
@@ -69,9 +61,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
 
                 Game game = idToGame.get(gameId);
                 if (game != null) {
-                    // DON'T remove the player from the game model on disconnect
-                    // This allows them to reconnect. Only remove on explicit "leave".
-                    // Just notify other players about the disconnect
+                    // keep player in model for reconnection; notify peers
                     broadcastToGame(gameId, Map.of(
                         "type", "player_disconnected",
                         "gameId", gameId,
@@ -81,7 +71,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                 }
 
                 log.debug("After close, game {} has {} peers", gameId, peers.size());
-                // Only cleanup the game if ALL players have disconnected and no one is in the game model
+                // cleanup game only if all peers disconnected and model has no players
                 if (peers.isEmpty() && game != null && game.getPlayers().isEmpty()){
                     games.remove(gameId);
                     idToGame.remove(gameId);
@@ -108,16 +98,16 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return;
                     }
 
-                    // Check if this connection already has a game
+                    // check if already in a game
                     String existingGameId = connToGame.get(conn);
                     if (existingGameId != null && idToGame.containsKey(existingGameId)) {
-                        // Connection already in a game, return error
+                        // connection already in a game, return error
                         sendJson(conn, Map.of("type", "error", "message", "already_in_game", "gameId", existingGameId));
                         log.warn("Create attempt by {} who is already in game {}", playerId, existingGameId);
                         return;
                     }
 
-                    // Generate unique room ID server-side
+                    // generate unique 6-char id
                     String gameId = generateUniqueGameId();
 
                     // create game and register creator
@@ -151,7 +141,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return;
                     }
 
-                    // Send current game state to the requesting connection
+                    // send current game state to the requesting connection
                     sendJson(conn, buildMessageWithState("synced", game, Map.of("playerId", playerId)));
                     log.info("Synced game state for {} to player {}", gameId, playerId);
                     break;
@@ -172,7 +162,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return;
                     }
 
-                    // Check if this player was part of the game
+                    // check if this player was part of the game
                     Player existingPlayer = game.getPlayers().get(playerId);
                     if (existingPlayer == null) {
                         sendJson(conn, Map.of("type", "error", "message", "not_in_game", "gameId", gameId));
@@ -180,8 +170,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return;
                     }
 
-                    // Re-attach this connection to the game
-                    // First, remove any stale connection mappings for this player
+                    // remove stale connections for this player
                     WebSocket oldConn = null;
                     for (Map.Entry<WebSocket, String> entry : connToPlayer.entrySet()) {
                         if (entry.getValue().equals(playerId) && entry.getKey() != conn) {
@@ -197,12 +186,12 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         log.info("Removed stale connection for player {} during reconnect", playerId);
                     }
 
-                    // Add new connection to the game
+                    // add new connection to the game
                     games.computeIfAbsent(gameId, k -> ConcurrentHashMap.newKeySet()).add(conn);
                     connToGame.put(conn, gameId);
                     connToPlayer.put(conn, playerId);
 
-                    // Determine role based on player order (first player is usually creator)
+                    // first player is creator
                     String role = "player";
                     int idx = 0;
                     for (String pid : game.getPlayers().keySet()) {
@@ -213,7 +202,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         idx++;
                     }
 
-                    // Send current game state with reconnect confirmation
+                    // send current game state with reconnect confirmation
                     Map<String, Object> extras = new java.util.HashMap<>();
                     extras.put("playerId", playerId);
                     extras.put("role", role);
@@ -231,11 +220,11 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return ;
                     }
 
-                    // Check if this connection is already in a game
+                    // check if already in a game
                     String existingGameId = connToGame.get(conn);
                     if (existingGameId != null) {
                         if (existingGameId.equals(gameId)) {
-                            // Trying to join the same game - treat as reconnection/sync
+                            // trying to join the same game - treat as reconnection/sync
                             Game existingGame = idToGame.get(gameId);
                             if (existingGame != null) {
                                 sendJson(conn, buildMessageWithState("joined", existingGame, Map.of("playerId", playerId)));
@@ -243,14 +232,14 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                                 return;
                             }
                         } else {
-                            // Trying to join a different game - error
+                            // trying to join a different game - error
                             sendJson(conn, Map.of("type", "error", "message", "already_in_game", "gameId", existingGameId));
                             log.warn("Player {} tried to join game {} but already in game {}", playerId, gameId, existingGameId);
                             return;
                         }
                     }
 
-                    // only allow joining existing games
+                    // validate game exists
                     Game game = idToGame.get(gameId);
                     if (game == null) {
                         sendJson(conn, Map.of("type", "error", "message", "unknown_game", "gameId", gameId));
@@ -258,7 +247,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return;
                     }
 
-                    // Check if game is full
+                    // check capacity
                     synchronized (game) {
                         if (game.getPlayers().size() >= 2) {
                             sendJson(conn, Map.of("type", "error", "message", "game_full", "gameId", gameId));
@@ -266,12 +255,12 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                             return;
                         }
 
-                        // Add connection to game
+                        // add connection
                         games.computeIfAbsent(gameId , k -> ConcurrentHashMap.newKeySet()).add(conn);
                         connToGame.put(conn , gameId);
                         connToPlayer.put(conn , playerId);
 
-                        // register the player
+                        // Register player.
                         Player p = new Player(playerId, node.path("name").asText(null), null, null);
                         game.addPlayer(p);
 
@@ -312,14 +301,14 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         moveExtras.put("y", y);
                         moveExtras.put("nextTurn", result.nextPlayerId);
 
-                        // broadcast move with full game state
+                        // Broadcast move.
                         broadcastToGame(gameId, buildMessageWithState("move", game, moveExtras), null);
 
                         if (result.winner != null || result.draw) {
                             Map<String,Object> overExtras = new java.util.HashMap<>();
                             overExtras.put("winner", result.winner != null ? String.valueOf(result.winner) : (result.draw ? "DRAW" : null));
                             broadcastToGame(gameId, buildMessageWithState("game_over", game, overExtras), null);
-                            // keep game model so players remain attached and creator may restart a new match
+                            // Keep model for restart.
                         }
                     } catch (IllegalArgumentException ex) {
                         sendJson(conn, Map.of("type", "error", "message", ex.getMessage()));
@@ -341,30 +330,30 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return;
                     }
 
-                    // remove connection from peers if present
+                    // Remove from peers.
                     Set<WebSocket> peers = games.get(gameId);
                     if (peers != null) {
                         peers.remove(conn);
                     }
 
-                    // remove mappings for this connection
+                    // Remove mappings.
                     connToGame.remove(conn);
                     connToPlayer.remove(conn);
 
-                    // remove player from model and broadcast updated state
+                    // Remove player and broadcast.
                     game.removePlayer(playerId);
                     broadcastToGame(gameId, buildMessageWithState("player_left", game, Map.of("playerId", playerId)), null);
 
                     log.info("Player {} left game {} via leave message", playerId, gameId);
 
-                    // if no peers remain, cleanup
+                    // Cleanup empty game.
                     if (peers == null || peers.isEmpty()){
                         games.remove(gameId);
                         idToGame.remove(gameId);
                         log.info("Removed empty game {} after leave", gameId);
                     }
 
-                    // ack the leaver
+                    // Ack leave.
                     sendJson(conn, Map.of("type", "left", "gameId", gameId, "playerId", playerId));
                     break;
                 }
@@ -383,7 +372,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return;
                     }
 
-                    // only allow the player who is in this connection to close the room
+                    // Verify owner.
                     String ownerPlayer = connToPlayer.get(conn);
                     if (ownerPlayer == null || !ownerPlayer.equals(playerId)) {
                         sendJson(conn, Map.of("type", "error", "message", "not authorized"));
@@ -391,24 +380,23 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return;
                     }
 
-                    // broadcast room closed to all peers
-                    // broadcast room closed to all peers
+                    // Broadcast close.
                     broadcastToGame(gameId, Map.of("type", "room_closed", "gameId", gameId), null);
 
-                    // cleanup mappings for this game and actively disconnect peers (kick them)
+                    // Cleanup and kick peers.
                     Set<WebSocket> peers = games.remove(gameId);
                     idToGame.remove(gameId);
 
                     if (peers != null) {
                         for (WebSocket peer : peers) {
                             try {
-                                // send explicit frame to each peer (some may have already received broadcast)
+                                // Send close frame.
                                 if (peer != conn && peer.isOpen()) {
                                     try { peer.send(mapper.writeValueAsString(Map.of("type", "room_closed", "gameId", gameId))) ; } catch (Exception ignored) {}
                                     try { peer.close(1000, "room closed by owner") ; } catch (Exception ignored) {}
                                 }
                             } finally {
-                                // remove any mappings for peer
+                                // Remove peer mappings.
                                 connToGame.remove(peer);
                                 connToPlayer.remove(peer);
                             }
@@ -417,7 +405,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
 
                     log.info("Game {} closed by {} and removed from server", gameId, playerId);
 
-                    // ack the closer
+                    // Ack close.
                     sendJson(conn, Map.of("type", "closed", "gameId", gameId, "playerId", playerId));
                     break;
                 }
@@ -438,7 +426,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return;
                     }
 
-                    // only allow the creator (connection owner) to start
+                    // Verify owner.
                     String ownerPlayer = connToPlayer.get(conn);
                     if (ownerPlayer == null || !ownerPlayer.equals(playerId)) {
                         sendJson(conn, Map.of("type", "error", "message", "not authorized"));
@@ -446,7 +434,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         return;
                     }
 
-                    // determine starting player: if creatorStarts true => playerId starts; else pick the other marked player if present
+                    // Determine start player.
                     String startPlayerId = playerId;
                     if (!creatorStarts) {
                         for (Map.Entry<String, Player> e : game.getPlayers().entrySet()) {
@@ -457,12 +445,12 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
                         }
                     }
 
-                    // reset board/moves for the new match and set starting player
+                    // Reset game.
                     game.resetForNewMatch();
                     game.setCurrentTurnPlayerId(startPlayerId);
                     game.setState(com.example.xo.model.GameState.IN_PROGRESS);
 
-                    // broadcast game_started with authoritative state
+                    // Broadcast start.
                     broadcastToGame(gameId, buildMessageWithState("game_started", game, Map.of("startedBy", playerId, "startPlayerId", startPlayerId)), null);
 
                     log.info("Game {} started by {} — startPlayer={}", gameId, playerId, startPlayerId);
@@ -543,10 +531,7 @@ public class StandaloneGameWebSocketServer extends WebSocketServer {
         log.info("broadcastToGame gameId={} -> peersSize={} sent={}", gameId, peers.size(), sent);
     }
 
-    /**
-     * Generate a unique 6-character alphanumeric game ID.
-     * Retries if collision occurs (highly unlikely with proper random generation).
-     */
+    // Generate unique 6-char ID.
     private String generateUniqueGameId() {
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         int maxAttempts = 10;

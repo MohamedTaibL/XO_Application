@@ -8,8 +8,8 @@ import lombok.AllArgsConstructor;
 import java.util.*;
 
 /**
- * Model skeleton for a Game with minimal local board logic.
- * Server will call addPlayer(...) and applyMove(...) and use the returned result to broadcast.
+ * model skeleton for a game with minimal local board logic.
+ * server will call addplayer(...) and applymove(...) and use the returned result to broadcast.
  */
 @Data
 @NoArgsConstructor
@@ -36,7 +36,7 @@ public class Game {
     }
 
     /**
-     * Add a player to the game. Assigns mark "X" or "O" and sets first player's turn.
+     * add a player to the game. assigns mark "x" or "o" and sets first player's turn.
      */
     public synchronized void addPlayer(Player p) {
         if (p == null || p.getId() == null) throw new IllegalArgumentException("player required");
@@ -69,7 +69,7 @@ public class Game {
     }
 
     /**
-     * Remove a player from the game. Adjust marks, current turn and state accordingly.
+     * remove a player from the game. adjust marks, current turn and state accordingly.
      */
     public synchronized void removePlayer(String playerId) {
         if (playerId == null) return;
@@ -106,9 +106,9 @@ public class Game {
     }
 
     /**
-     * Apply move to the board. Validates bounds, turn and occupancy.
-     * Returns a MoveResult describing winner/draw/nextTurn.
-     * Throws IllegalArgumentException on invalid move.
+     * apply move to the board. validates bounds, turn and occupancy.
+     * returns a moveresult describing winner/draw/nextturn.
+     * throws illegalargumentexception on invalid move.
      */
     public synchronized MoveResult applyMove(Move m) {
         if (m == null) throw new IllegalArgumentException("move required");
@@ -127,11 +127,11 @@ public class Game {
             throw new IllegalArgumentException("cell occupied");
         }
 
-        // apply
+    // apply
         board[idx] = p.getMark().charAt(0);
         moves.add(m);
 
-        // check winner / draw
+    // check winner / draw
     Character winner = checkWinner();
     boolean draw = winner == null && isBoardFull();
 
@@ -165,13 +165,13 @@ public class Game {
     }
 
     /**
-     * Reset the board and moves for a new match while keeping players assigned.
+     * reset the board and moves for a new match while keeping players assigned.
      */
     public synchronized void resetForNewMatch() {
         this.moves.clear();
         Arrays.fill(board, ' ');
-        // clear any transient match-specific state
-        // currentTurnPlayerId will be set by the server when the match starts
+    // clear any transient match-specific state
+    // currentturnplayerid will be set by the server when the match starts
         this.currentTurnPlayerId = null;
         this.state = GameState.WAITING;
     }
@@ -201,7 +201,7 @@ public class Game {
     }
 
     public static class MoveResult {
-        public final Character winner; // 'X' or 'O' or null
+    public final Character winner; // 'x' or 'o' or null
         public final boolean draw;
         public final String nextPlayerId;
 

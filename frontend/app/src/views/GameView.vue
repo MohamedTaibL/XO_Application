@@ -42,7 +42,7 @@ const playerId = (route.query.playerId as string) || ''
 const role = (route.query.role as string) || 'player'
 currentRole.value = role
 
-// Validate required parameters
+// validate params.
 if (!gameId || !playerId) {
   console.warn('[GameView] Missing required parameters: gameId or playerId')
   router.push({ name: 'online' })
@@ -55,11 +55,11 @@ const onLocalCellClick = (index: number) => {
   if (connected.value) send({ type: 'move', gameId, playerId, x, y })
 }
 
-// Attempt to reconnect/validate the game on mount
+// reconnect on mount.
 function attemptReconnect() {
   if (!gameId || !playerId) return
   
-  // Send reconnect message to validate and re-attach to the game
+  // send reconnect.
   send({ type: 'reconnect', gameId, playerId })
 }
 
@@ -67,35 +67,35 @@ onMounted(() => {
   off = onMessage((msg: any) => {
     if (!msg) return
     
-    // Handle welcome message - trigger reconnect attempt
+  // on welcome, reconnect.
     if (msg.type === 'welcome') {
       attemptReconnect()
       return
     }
     
-    // support socket_closed pseudo-message from the composable
+  // handle socket close.
     if (msg.type === 'socket_closed') {
       const lm = msg.lastMessage
       if (lm && lm.type === 'room_closed' && lm.gameId === gameId) {
-        // Room closed by host - silently redirect
+  // host closed room.
         console.warn('[GameView] Room closed by host')
         try { close() } catch (e) {}
         router.push({ name: 'online' })
         return
       }
-      // generic socket close: silently route back to lobby
+  // socket closed.
       console.warn('[GameView] Socket closed unexpectedly')
       try { close() } catch (e) {}
       router.push({ name: 'online' })
       return
     }
     
-    // Handle reconnection response
+  // handle reconnect.
     if (msg.type === 'reconnected' && msg.gameId === gameId) {
       validated.value = true
       currentRole.value = msg.role || role
       
-      // Restore game state
+  // restore state.
       if (gameBoard.value && typeof gameBoard.value.setState === 'function') {
         const isGameOver = msg.state === 'FINISHED'
         const winner = isGameOver ? (msg.winner || null) : null
@@ -118,7 +118,7 @@ onMounted(() => {
     switch (msg.type) {
       case 'game_started': {
         validated.value = true
-        // authoritative state
+  // sync state.
         if (gameBoard.value && typeof gameBoard.value.setState === 'function') {
           gameBoard.value.setState({ board: msg.board, currentTurn: msg.currentTurn })
         }
@@ -136,27 +136,26 @@ onMounted(() => {
         if (gameBoard.value && typeof gameBoard.value.setState === 'function') {
           gameBoard.value.setState({ board: msg.board, currentTurn: null, winner: msg.winner === 'DRAW' ? null : msg.winner, draw: msg.winner === 'DRAW' })
         }
-        // after a short delay, route back to the appropriate view
+  // route back after delay.
         setTimeout(() => {
-          // keep the websocket connection open and route back while keeping room association
+          // route back.
           if (currentRole.value === 'creator') router.push({ name: 'create-room', query: { gameId, role: 'creator' } })
           else router.push({ name: 'join-room', query: { gameId, role: 'player' } })
         }, 2000)
         break
       }
       case 'room_closed': {
-        // room closed by creator while in-game - silently redirect
+  // host closed room.
         console.warn('[GameView] Room closed by host')
         try { close() } catch (e) {}
         router.push({ name: 'online' })
         break
       }
       case 'error': {
-        // Only log errors to console - don't interrupt the user
+  // log errors only.
         console.debug('[GameView] Error from server:', msg.message)
 
-        // FATAL ERRORS: Room doesn't exist or user can't be in this game
-        // These require redirecting to lobby
+  // fatal errors -> lobby.
         const fatalErrors = [
           'unknown_game',
           'unknown game',
@@ -167,19 +166,18 @@ onMounted(() => {
         ]
 
         if (fatalErrors.some(e => msg.message?.includes(e))) {
-          // Critical failure: Silently redirect to lobby
+          // redirect to lobby.
           console.warn('[GameView] Fatal error, redirecting to lobby:', msg.message)
           try { close() } catch (e) {}
           router.push({ name: 'online' })
         }
-        // Non-fatal errors (wrong turn, cell occupied, etc.): 
-        // Simply ignore - don't alert, don't redirect, just do nothing
+  // ignore non-fatal errors.
         break
       }
     }
   })
 
-  // Ensure connection and attempt reconnect
+  // connect.
   connect()
 })
 

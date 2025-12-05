@@ -5,8 +5,8 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 /**
- * Player model for online play.
- * Bot gameplay is handled entirely client-side, so no bot flag needed.
+ * player model for online play.
+ * bot gameplay is handled entirely client-side, so no bot flag needed.
  */
 @Data
 @NoArgsConstructor
@@ -15,7 +15,7 @@ public class Player {
     private String id;
     private String name;
     private String mark;
-    private String sessionId; // Optional: for session validation
+    private String sessionId; // optional: for session validation
 
     public Player(String id, String name, String mark) {
         this.id = id;
